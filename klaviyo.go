@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 )
@@ -25,6 +26,7 @@ const (
 
 	// Use these instead of the MIME library because this is what is specified in their documentation.
 	ContentHTML = "text/html"
+	ContentHTMLUTF8 = "text/html; charset=utf-8"
 	ContentJSON = "application/json"
 
 	// They have multiple endpoints unfortunately.
@@ -34,17 +36,19 @@ const (
 )
 
 var (
+	ErrNoPublicKey         = errors.New("missing public key")
+	ErrNoPrivateKey        = errors.New("missing private key")
 	ErrNoProfileIdentifier = errors.New("there is no unique profile identifier, must have email or phone number")
 	ErrFailed              = errors.New("request successful, call failed")
 	ErrInvalidOutArg       = errors.New("out arg provided does not match datatype of response")
 )
 
-func newEndpoint(endpoint, path string) *url.URL {
+func newEndpoint(endpoint, uri string) *url.URL {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		panic(err) // This should always work because endpoint should be typed correctly in this SDK!
 	}
-	u.Path = path
+	u.Path = path.Join(u.Path, uri)
 	return u
 }
 
@@ -58,11 +62,21 @@ func (e *BadResponseError) Error() string {
 }
 
 type APIError struct {
+	// Use this to store the raw error response if the response is not parseable.
+	Raw     string
+
+	// Klaviyo's documentation details the usage of "message", but returns "detail" in some instances.
+	Detail  string `json:"detail"`
 	Message string `json:"message"`
 }
 
 func (e *APIError) Error() string {
-	return e.Message
+	if e.Message != "" {
+		return e.Message
+	} else if e.Detail != "" {
+		return e.Detail
+	}
+	return e.Raw
 }
 
 // All objects in Klaviyo use this basic structure to identify what kind of object it is and how to identify it.
@@ -82,8 +96,17 @@ type Client struct {
 	DefaultTimeout time.Duration
 }
 
+func (c *Client) privateReq(method, accept string, url *url.URL, out interface{}) error {
+	if c.PrivateKey == "" {
+		return ErrNoPrivateKey
+	}
+	values := url.Query()
+	values.Add("api_key", c.PrivateKey)
+	url.RawQuery = values.Encode()
+	return c.req(method, accept, url, out)
+}
+
 func (c *Client) req(method, accept string, url *url.URL, out interface{}) error {
-	url.Query().Add("api_key", c.PrivateKey)
 	req, err := http.NewRequest(method, url.String(), nil)
 	if err != nil {
 		return err
@@ -115,13 +138,14 @@ func (c *Client) req(method, accept string, url *url.URL, out interface{}) error
 				}
 			}
 		}
+		err.Raw = string(data)
 		return &err
 	}
 	if out != nil {
 		switch contentType {
 		case ContentJSON:
 			return json.NewDecoder(bytes.NewBuffer(data)).Decode(out)
-		case ContentHTML:
+		case ContentHTML, ContentHTMLUTF8:
 			k, ok := out.(*string)
 			if !ok {
 				return ErrInvalidOutArg
@@ -135,6 +159,9 @@ func (c *Client) req(method, accept string, url *url.URL, out interface{}) error
 // https://apidocs.klaviyo.com/reference/track-identify#identify
 // GET https://a.klaviyo.com/api/identify
 func (c *Client) Identify(person *Person) error {
+	if c.PublicKey == "" {
+		return ErrNoPublicKey
+	}
 	if !person.HasProfileIdentifier() {
 		return ErrNoProfileIdentifier
 	}
@@ -151,7 +178,9 @@ func (c *Client) Identify(person *Person) error {
 		return err
 	}
 	u := newEndpoint(Endpoint, "identify")
-	u.Query().Add("data", base64.URLEncoding.EncodeToString(buf.Bytes()))
+	values := u.Query()
+	values.Add("data", base64.StdEncoding.EncodeToString(buf.Bytes()))
+	u.RawQuery = values.Encode()
 	var res string
 	if err := c.req(http.MethodGet, ContentHTML, u, &res); err != nil {
 		return err
@@ -166,7 +195,7 @@ func (c *Client) Identify(person *Person) error {
 // GET https://a.klaviyo.com/api/v1/person/person_id
 func (c *Client) GetPerson(personId string) (*Person, error) {
 	var p Person
-	err := c.req(http.MethodGet, ContentJSON, newEndpoint(EndpointV1, fmt.Sprintf("person/%s", personId)), &p)
+	err := c.privateReq(http.MethodGet, ContentJSON, newEndpoint(EndpointV1, fmt.Sprintf("person/%s", personId)), &p)
 	return &p, err
 }
 
@@ -175,10 +204,12 @@ func (c *Client) GetPerson(personId string) (*Person, error) {
 // Only works to update a persons attributes after they have been identified.
 func (c *Client) UpdatePerson(person *Person) error {
 	u := newEndpoint(EndpointV1, fmt.Sprintf("person/%s", person.Id))
+	values := u.Query()
 	for k, v := range person.GetMap() {
-		u.Query().Add(k, fmt.Sprintf("%v", v))
+		values.Add(k, fmt.Sprintf("%v", v))
 	}
-	return c.req(http.MethodPut, ContentJSON, u, person)
+	u.RawQuery = values.Encode()
+	return c.privateReq(http.MethodPut, ContentJSON, u, person)
 }
 
 type ListPerson struct {
@@ -192,10 +223,21 @@ type ListPerson struct {
 // GET https://a.klaviyo.com/api/v2/list/list_id/members
 func (c *Client) InList(listId string, emails []string, phoneNumbers []string, pushTokens []string) ([]ListPerson, error) {
 	u := newEndpoint(EndpointV2, fmt.Sprintf("list/%s/members", listId))
-	u.Query().Add("emails", strings.Join(emails, ","))
-	u.Query().Add("phone_numbers", strings.Join(phoneNumbers, ","))
-	u.Query().Add("push_tokens", strings.Join(pushTokens, ","))
+	if len(emails) == 0 && len(phoneNumbers) == 0 && len(pushTokens) == 0 {
+		return nil, nil
+	}
+	values := u.Query()
+	if len(emails) > 0 {
+		values.Add("emails", strings.Join(emails, ","))
+	}
+	if len(phoneNumbers) > 0 {
+		values.Add("phone_numbers", strings.Join(phoneNumbers, ","))
+	}
+	if len(pushTokens) > 0 {
+		values.Add("push_tokens", strings.Join(pushTokens, ","))
+	}
+	u.RawQuery = values.Encode()
 	var res []ListPerson
-	err := c.req(http.MethodGet, ContentJSON, u, &res)
+	err := c.privateReq(http.MethodGet, ContentJSON, u, &res)
 	return res, err
 }

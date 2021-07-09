@@ -6,6 +6,24 @@ import (
 	"strings"
 )
 
+type Attributes map[string]interface{}
+
+func (a Attributes) ParseBool(key string) bool {
+	val, ok := a[key]
+	if !ok {
+		return false
+	}
+	switch val.(type) {
+	case string:
+		if val.(string) == "true" || val.(string) == "1" {
+			return true
+		}
+	case bool:
+		return val.(bool)
+	}
+	return false
+}
+
 type Person struct {
 	Object
 
@@ -27,7 +45,7 @@ type Person struct {
 	Zip          string   `json:"$zip"`
 
 	// Use these to have custom attributes tied to a user that can be used to create segments for lists.
-	Attributes map[string]interface{}
+	Attributes Attributes
 }
 
 // A profile identifier is an email or phone number. In the case of SMS they must have a phone number.

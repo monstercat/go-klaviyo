@@ -6,11 +6,13 @@ import (
 	"testing"
 )
 
-const testAttr = "IsTest"
-
 // A test person for our test cases. If you change this please make sure to update the tests!
 func newTestPerson() Person {
 	return Person{
+		Object: Object{
+			Id:     testPersonId,
+			Object: "Person",
+		},
 		City:         "Vancouver",
 		Consent:      []string{ConsentEmail, ConsentSMS},
 		Country:      "Canada",
@@ -20,7 +22,7 @@ func newTestPerson() Person {
 		Organization: "Monstercat",
 		PhoneNumber:  "+1234567890",
 		Region:       "British Columbia",
-		Attributes:   map[string]interface{}{testAttr: true},
+		Attributes:   map[string]interface{}{attrIsTest: true},
 	}
 }
 
@@ -70,7 +72,7 @@ func TestPerson_GetMap(t *testing.T) {
 	if m["$region"] != p.Region {
 		t.Error("Field Region did not match map value.")
 	}
-	if m[testAttr] != p.Attributes[testAttr] {
+	if m[attrIsTest] != p.Attributes[attrIsTest] {
 		t.Error("Attribute IsTest did not match value.")
 	}
 	if arr, ok := m["$consent"].([]string); !ok {
@@ -117,7 +119,7 @@ func TestPerson_JSON(t *testing.T) {
 	if len(a.Consent) != len(b.Consent) {
 		t.Error("Consent length did not match")
 	}
-	if a.Attributes[testAttr] != b.Attributes[testAttr] {
+	if a.Attributes[attrIsTest] != b.Attributes[attrIsTest] {
 		t.Error("Attribute did not match")
 	}
 }
