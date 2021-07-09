@@ -10,7 +10,8 @@ type Person struct {
 	Object
 
 	// Below are special fields used by Klaviyo, they will be render in special UI for fancy-ness
-	// they are identified by the $ prefix in their JSON.
+	// they are identified by the $ prefix in their JSON. Any extra attributes appear in the same flat structure
+	// but we store them in Attributes below.
 	City         string   `json:"$city"`
 	Consent      []string `json:"$consent"`
 	Country      string   `json:"$country"`
