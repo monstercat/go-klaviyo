@@ -52,10 +52,13 @@ func (p *Person) MarshalJSON() ([]byte, error) {
 
 func (p *Person) UnmarshalJSON(data []byte) error {
 	m := map[string]interface{}{}
-	if err := json.Unmarshal(data, m); err != nil {
+	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, p); err != nil {
+
+	type Person2 Person
+	var p2 Person2
+	if err := json.Unmarshal(data, &p2); err != nil {
 		return err
 	}
 
@@ -81,6 +84,7 @@ func (p *Person) UnmarshalJSON(data []byte) error {
 		delete(m, k)
 	}
 
+	*p = Person(p2)
 	p.Attributes = m
 	return nil
 }

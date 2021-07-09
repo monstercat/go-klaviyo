@@ -16,14 +16,12 @@ import (
 	"time"
 )
 
-type Consent string
-
 const (
-	ConsentEmail  Consent = "email"
-	ConsentWeb    Consent = "web"
-	ConsentSms    Consent = "sms"
-	ConsentDirect Consent = "directmail"
-	ConsentMobile Consent = "mobile"
+	ConsentEmail  = "email"
+	ConsentWeb    = "web"
+	ConsentSMS    = "sms"
+	ConsentDirect = "directmail"
+	ConsentMobile = "mobile"
 
 	// Use these instead of the MIME library because this is what is specified in their documentation.
 	ContentHTML = "text/html"
@@ -67,6 +65,7 @@ func (e *APIError) Error() string {
 	return e.Message
 }
 
+// All objects in Klaviyo use this basic structure to identify what kind of object it is and how to identify it.
 type Object struct {
 	Id     string `json:"id"`
 	Object string `json:"object"` // e.g. person, $list
