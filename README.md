@@ -8,6 +8,10 @@ feel free to make a PR to include any extra functionality you need.
 Klaviyo's HTTP API is very messy and has multiple versions thus we have done our best to keep it simple and work around
 it. Please read the source code to see examples of this.
 
+## Testing
+
+You will need to use environment variables to test everything. Please read klaviyo_test.go for a list of them.
+
 ## Contributing Notes
 
  * You must have tests.
