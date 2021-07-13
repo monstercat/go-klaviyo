@@ -28,8 +28,13 @@ type Person struct {
 	Object
 
 	// Below are special fields used by Klaviyo, they will be render in special UI for fancy-ness
-	// they are identified by the $ prefix in their JSON. Any extra attributes appear in the same flat structure
-	// but we store them in Attributes below.
+	// they are identified by the $ prefix in their JSON.
+	// Please read here for more: https://help.klaviyo.com/hc/en-us/articles/115005084927-Template-Tags-and-Variable-Syntax#klaviyo-special-properties18
+	//
+	// Any extra attributes appear in the same flat structure but we store them in Attributes below.
+	CustomId     string   `json:"$id"`
+	Address1     string   `json:"$address1"`
+	Address2     string   `json:"$address2"`
 	City         string   `json:"$city"`
 	Consent      []string `json:"$consent"`
 	Country      string   `json:"$country"`
@@ -37,9 +42,12 @@ type Person struct {
 	FirstName    string   `json:"$first_name"`
 	Image        string   `json:"$image"`
 	LastName     string   `json:"$last_name"`
+	Latitude     string   `json:"$latitude"`
+	Longitude    string   `json:"$longitude"`
 	Organization string   `json:"$organization"`
 	PhoneNumber  string   `json:"$phone_number"`
 	Region       string   `json:"$region"`
+	Source       string   `json:"$source"`
 	Timezone     string   `json:"$timezone"`
 	Title        string   `json:"$title"`
 	Zip          string   `json:"$zip"`
@@ -80,25 +88,16 @@ func (p *Person) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Remove the existing keys because they are part of the struct
-	cleanKeys := []string{
-		"id",
-		"object",
-		"$city",
-		"$consent",
-		"$country",
-		"$email",
-		"$first_name",
-		"$image",
-		"$last_name",
-		"$organization",
-		"$phone_number",
-		"$region",
-		"$timezone",
-		"$title",
-		"$zip",
-	}
-	for _, k := range cleanKeys {
+	// Remove keys natively supported by klaviyo
+	delete(m, "id")
+	delete(m, "object")
+	for k, _ := range m {
+		if len(k) <= 0 {
+			continue
+		}
+		if k[0] != '$' {
+			continue
+		}
 		delete(m, k)
 	}
 

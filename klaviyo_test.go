@@ -102,3 +102,28 @@ func TestClient_InList(t *testing.T) {
 		t.Fatalf("User should not appear in the test list!")
 	}
 }
+
+// This test expects that your list is using single opt-in settings. Double opt-in will not return any results.
+func TestClient_Subscribe(t *testing.T) {
+	email := "dev@monstercat.com"
+	client := newTestClient()
+	// TODO get list information on double opt-in status to adapt test checks
+	res, err := client.Subscribe(testListId, []string{email}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 {
+		t.Fatal("Expected 1 result back from Subscribe call, please make sure that you are using single opt-in")
+	} else if res[0].Email != email {
+		t.Fatalf("Result email did not match input email")
+	}
+}
+
+func TestClient_Unsubscribe(t *testing.T) {
+	email := "dev@monstercat.com"
+	client := newTestClient()
+	err := client.Unsubscribe(testListId, []string{email}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

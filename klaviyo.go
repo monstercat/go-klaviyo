@@ -25,9 +25,10 @@ const (
 	ConsentMobile = "mobile"
 
 	// Use these instead of the MIME library because this is what is specified in their documentation.
-	ContentHTML = "text/html"
+	ContentNone     = ""
+	ContentHTML     = "text/html"
 	ContentHTMLUTF8 = "text/html; charset=utf-8"
-	ContentJSON = "application/json"
+	ContentJSON     = "application/json"
 
 	// They have multiple endpoints unfortunately.
 	Endpoint   = "https://a.klaviyo.com/api"
@@ -63,7 +64,7 @@ func (e *BadResponseError) Error() string {
 
 type APIError struct {
 	// Use this to store the raw error response if the response is not parseable.
-	Raw     string
+	Raw string
 
 	// Klaviyo's documentation details the usage of "message", but returns "detail" in some instances.
 	Detail  string `json:"detail"`
@@ -96,24 +97,17 @@ type Client struct {
 	DefaultTimeout time.Duration
 }
 
-func (c *Client) privateReq(method, accept string, url *url.URL, out interface{}) error {
+func (c *Client) doReq(r *http.Request, out interface{}) error {
+	// We are adding the private key on all requests because it is easier to do.
 	if c.PrivateKey == "" {
 		return ErrNoPrivateKey
 	}
-	values := url.Query()
+	values := r.URL.Query()
 	values.Add("api_key", c.PrivateKey)
-	url.RawQuery = values.Encode()
-	return c.req(method, accept, url, out)
-}
+	r.URL.RawQuery = values.Encode()
 
-func (c *Client) req(method, accept string, url *url.URL, out interface{}) error {
-	req, err := http.NewRequest(method, url.String(), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Accept", accept)
 	client := http.Client{Timeout: c.DefaultTimeout}
-	res, err := client.Do(req)
+	res, err := client.Do(r)
 	if err != nil {
 		return err
 	}
@@ -156,8 +150,34 @@ func (c *Client) req(method, accept string, url *url.URL, out interface{}) error
 	return nil
 }
 
+func (c *Client) send(method, accept string, url *url.URL, out interface{}) error {
+	req, err := http.NewRequest(method, url.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Accept", accept)
+	return c.doReq(req, out)
+}
+
+func (c *Client) sendJSON(method, accept string, url *url.URL, in interface{}, out interface{}) error {
+	xs, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(method, url.String(), bytes.NewReader(xs))
+	if err != nil {
+		return err
+	}
+	if accept != ContentNone {
+		req.Header.Add("Accept", accept)
+	}
+	req.Header.Add("Content-Type", ContentJSON)
+	return c.doReq(req, out)
+}
+
 // https://apidocs.klaviyo.com/reference/track-identify#identify
 // GET https://a.klaviyo.com/api/identify
+// TODO Update Identify to use POST method version as GET is outdated
 func (c *Client) Identify(person *Person) error {
 	if c.PublicKey == "" {
 		return ErrNoPublicKey
@@ -182,7 +202,7 @@ func (c *Client) Identify(person *Person) error {
 	values.Add("data", base64.StdEncoding.EncodeToString(buf.Bytes()))
 	u.RawQuery = values.Encode()
 	var res string
-	if err := c.req(http.MethodGet, ContentHTML, u, &res); err != nil {
+	if err := c.send(http.MethodGet, ContentHTML, u, &res); err != nil {
 		return err
 	}
 	if res != "1" {
@@ -195,7 +215,7 @@ func (c *Client) Identify(person *Person) error {
 // GET https://a.klaviyo.com/api/v1/person/person_id
 func (c *Client) GetPerson(personId string) (*Person, error) {
 	var p Person
-	err := c.privateReq(http.MethodGet, ContentJSON, newEndpoint(EndpointV1, fmt.Sprintf("person/%s", personId)), &p)
+	err := c.send(http.MethodGet, ContentJSON, newEndpoint(EndpointV1, fmt.Sprintf("person/%s", personId)), &p)
 	return &p, err
 }
 
@@ -209,7 +229,54 @@ func (c *Client) UpdatePerson(person *Person) error {
 		values.Add(k, fmt.Sprintf("%v", v))
 	}
 	u.RawQuery = values.Encode()
-	return c.privateReq(http.MethodPut, ContentJSON, u, person)
+	return c.send(http.MethodPut, ContentJSON, u, person)
+}
+
+// https://apidocs.klaviyo.com/reference/lists-segments#subscribe
+// POST https://a.klaviyo.com/api/v2/list/list_id/subscribe
+func (c *Client) Subscribe(listId string, emails, phoneNumbers []string) ([]ListPerson, error) {
+	u := newEndpoint(EndpointV2, fmt.Sprintf("list/%s/subscribe", listId))
+	var res []ListPerson
+	type payload struct {
+		Profiles []map[string]interface{} `json:"profiles"`
+	}
+	p := payload{
+		Profiles: []map[string]interface{}{},
+	}
+	for _, email := range emails {
+		p.Profiles = append(p.Profiles, map[string]interface{}{
+			"email": email,
+		})
+	}
+	for _, num := range phoneNumbers {
+		p.Profiles = append(p.Profiles, map[string]interface{}{
+			"phone_number": num,
+			"sms_consent":  true,
+		})
+	}
+	err := c.sendJSON(http.MethodPost, ContentJSON, u, &p, &res)
+	return res, err
+}
+
+// https://apidocs.klaviyo.com/reference/lists-segments#unsubscribe
+// DELETE https://a.klaviyo.com/api/v2/list/list_id/subscribe
+func (c *Client) Unsubscribe(listId string, emails, phoneNumbers, pushTokens []string) error {
+	u := newEndpoint(EndpointV2, fmt.Sprintf("list/%s/subscribe", listId))
+	toc := map[string][]string{
+		"emails":        emails,
+		"phone_numbers": phoneNumbers,
+		"push_tokens":   pushTokens,
+	}
+	m := map[string][]string{}
+	for k, arr := range toc {
+		if len(arr) > 0 {
+			m[k] = make([]string, 0)
+		}
+		for _, x := range arr {
+			m[k] = append(m[k], x)
+		}
+	}
+	return c.sendJSON(http.MethodDelete, ContentNone, u, m, nil)
 }
 
 type ListPerson struct {
@@ -221,7 +288,7 @@ type ListPerson struct {
 
 // https://apidocs.klaviyo.com/reference/lists-segments#list-membership
 // GET https://a.klaviyo.com/api/v2/list/list_id/members
-func (c *Client) InList(listId string, emails []string, phoneNumbers []string, pushTokens []string) ([]ListPerson, error) {
+func (c *Client) InList(listId string, emails, phoneNumbers, pushTokens []string) ([]ListPerson, error) {
 	u := newEndpoint(EndpointV2, fmt.Sprintf("list/%s/members", listId))
 	if len(emails) == 0 && len(phoneNumbers) == 0 && len(pushTokens) == 0 {
 		return nil, nil
@@ -238,6 +305,6 @@ func (c *Client) InList(listId string, emails []string, phoneNumbers []string, p
 	}
 	u.RawQuery = values.Encode()
 	var res []ListPerson
-	err := c.privateReq(http.MethodGet, ContentJSON, u, &res)
+	err := c.send(http.MethodGet, ContentJSON, u, &res)
 	return res, err
 }
