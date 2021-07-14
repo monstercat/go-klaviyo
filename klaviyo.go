@@ -179,6 +179,12 @@ func (c *Client) sendJSON(method, accept string, url *url.URL, in interface{}, o
 // GET https://a.klaviyo.com/api/identify
 // TODO Update Identify to use POST method version as GET is outdated
 func (c *Client) Identify(person *Person) error {
+	return c.IdentifySafe(person, false)
+}
+
+// Use this if you do not want to send values that are not set. This is great for when you want to update a Person
+// without first fetching their information. This will happen if you only have thier email and no Klaviyo Id to utilize.
+func (c *Client) IdentifySafe(person *Person, omit bool) error {
 	if c.PublicKey == "" {
 		return ErrNoPublicKey
 	}
@@ -186,12 +192,17 @@ func (c *Client) Identify(person *Person) error {
 		return ErrNoProfileIdentifier
 	}
 
+	props := person.GetMap()
+	if omit {
+		trimEmptyValues(props)
+	}
+
 	payload := struct {
 		Token      string      `json:"token"`
 		Properties interface{} `json:"properties"`
 	}{
 		Token:      c.PublicKey,
-		Properties: person.GetMap(),
+		Properties: props,
 	}
 	buf := bytes.NewBuffer([]byte{})
 	if err := json.NewEncoder(buf).Encode(&payload); err != nil {
@@ -307,4 +318,22 @@ func (c *Client) InList(listId string, emails, phoneNumbers, pushTokens []string
 	var res []ListPerson
 	err := c.send(http.MethodGet, ContentJSON, u, &res)
 	return res, err
+}
+
+func trimEmptyValues(m map[string]interface{}) map[string]interface{} {
+	for key, val := range m {
+		var kill bool
+		switch val.(type) {
+		case nil:
+			kill = true
+		case string:
+			if val.(string) == "" {
+				kill = true
+			}
+		}
+		if kill {
+			delete(m, key)
+		}
+	}
+	return m
 }
