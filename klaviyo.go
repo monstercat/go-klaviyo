@@ -63,6 +63,8 @@ func (e *BadResponseError) Error() string {
 }
 
 type APIError struct {
+	StatusCode int
+
 	// Use this to store the raw error response if the response is not parseable.
 	Raw string
 
@@ -122,6 +124,7 @@ func (c *Client) doReq(r *http.Request, out interface{}) error {
 	// See more here: https://apidocs.klaviyo.com/reference/api-overview#errors
 	if res.StatusCode != http.StatusOK {
 		var err APIError
+		err.StatusCode = res.StatusCode
 		if contentType != ContentJSON {
 			err.Message = string(data)
 		} else {
