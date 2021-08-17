@@ -47,7 +47,7 @@ type Person struct {
 	Organization string   `json:"$organization"`
 	PhoneNumber  string   `json:"$phone_number"`
 	Region       string   `json:"$region"`
-	Source       string   `json:"$source"`
+	Source       int      `json:"$source"`
 	Timezone     string   `json:"$timezone"`
 	Title        string   `json:"$title"`
 	Zip          string   `json:"$zip"`
