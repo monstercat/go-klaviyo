@@ -42,12 +42,12 @@ type Person struct {
 	FirstName    string   `json:"$first_name"`
 	Image        string   `json:"$image"`
 	LastName     string   `json:"$last_name"`
-	Latitude     string   `json:"$latitude"`
-	Longitude    string   `json:"$longitude"`
+	Latitude     KFloat   `json:"$latitude"`
+	Longitude    KFloat   `json:"$longitude"`
 	Organization string   `json:"$organization"`
 	PhoneNumber  string   `json:"$phone_number"`
 	Region       string   `json:"$region"`
-	Source       int      `json:"$source"`
+	Source       KInt     `json:"$source"`
 	Timezone     string   `json:"$timezone"`
 	Title        string   `json:"$title"`
 	Zip          string   `json:"$zip"`
